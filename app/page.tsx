@@ -330,13 +330,13 @@ export default function Home() {
               id="ella-title"
               className="pr-10 text-xl font-semibold tracking-tight text-white"
             >
-              Hi I'm Ella 👋🏻
+              Hi I&apos;m Ella 👋🏻
             </h2>
             <div className="mt-5 space-y-4 text-[15px] leading-relaxed text-slate-300">
               <p className="text-cyan-200">
                 I believe the next generation of AI will be defined by platforms
                 that help teams ship faster, scale reliably, and optimize for
-                efficiency, and I'm excited to join Together AI as a Product
+                efficiency, and I&apos;m excited to join Together AI as a Product
                 Marketing Intern in 2026.
               </p>
             </div>
