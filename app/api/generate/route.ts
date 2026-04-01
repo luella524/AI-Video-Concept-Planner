@@ -71,6 +71,82 @@ function normalizeResponseShape(
   return { summary, scenes, prompts, final_prompt };
 }
 
+/** Qwen and smaller models sometimes leak JSON keys or other fields into scene strings. */
+function isGarbageSceneOrPromptLine(s: string): boolean {
+  const t = s.trim();
+  if (t.length < 25) return true;
+  if (/final_prompt\s*["']?\s*:/i.test(t)) return true;
+  if (/^["']?final_prompt["']?\s*:/i.test(t)) return true;
+  if (/^prompts?\s*[:[\s'"`]/i.test(t)) return true;
+  if (/^\[[\s\S]*\]$/.test(t) && t.length < 400) return true;
+  return false;
+}
+
+function looksLikeModularFinalPrompt(s: string): boolean {
+  return (
+    s.includes("VIDEO CONCEPT:") &&
+    s.includes("STYLE:") &&
+    s.includes("STRUCTURE:")
+  );
+}
+
+/** Canonical modular brief; used in prompts and as fallback when the model returns a one-liner. */
+function buildCanonicalFinalPrompt(core: string): string {
+  return `VIDEO CONCEPT:
+"${core}"
+
+STYLE:
+Modern, minimal, high-end product film
+
+STRUCTURE:
+1. Hook — immediate visual tied to ambition and product thinking
+2. Contrast — two visual chapters that build curiosity
+3. Closing — one iconic, memorable frame
+
+VISUAL LANGUAGE:
+* Camera: slow, intentional, confident movements
+* Lighting: soft key light with subtle edge contrast
+* Color: restrained neutrals with one accent color
+* Composition: clean, negative space, product-focused framing
+
+AUDIO:
+* Sparse piano or ambient bed
+* One sharp percussive accent for transitions
+
+TONE:
+* No direct narration
+* Let visuals communicate meaning
+* Subtle, intelligent, confident
+
+CONSTRAINTS:
+* Avoid generic visuals
+* Avoid stock aesthetics
+* Focus on originality and clarity`;
+}
+
+/**
+ * Keep only real scene beats; cap at 3. Drop leaked JSON / prompts rows.
+ */
+function sanitizeScenesAndPrompts(
+  scenes: string[],
+  prompts: string[]
+): { scenes: string[]; prompts: string[] } | null {
+  const scenesF = scenes.filter((s) => !isGarbageSceneOrPromptLine(s));
+  const promptsF = prompts.filter((p) => !isGarbageSceneOrPromptLine(p));
+  const sOut =
+    scenesF.length >= 3 ? scenesF.slice(0, 3) : scenes.slice(0, 3);
+  const pOut =
+    promptsF.length >= 3 ? promptsF.slice(0, 3) : prompts.slice(0, 3);
+  if (sOut.length < 3 || pOut.length < 3) return null;
+  if (
+    sOut.some((s) => isGarbageSceneOrPromptLine(s)) ||
+    pOut.some((p) => isGarbageSceneOrPromptLine(p))
+  ) {
+    return null;
+  }
+  return { scenes: sOut, prompts: pOut };
+}
+
 async function generateWithTogether(
   idea: string
 ): Promise<Omit<GenerateResponse, "post_credit">> {
@@ -104,7 +180,12 @@ async function generateWithTogether(
         minItems: 3,
         maxItems: 3,
       },
-      final_prompt: { type: "string" },
+      final_prompt: {
+        type: "string",
+        minLength: 280,
+        description:
+          "Full modular brief: must contain lines VIDEO CONCEPT:, STYLE:, STRUCTURE:, VISUAL LANGUAGE:, AUDIO:, TONE:, CONSTRAINTS:. Not a one-line ad or sentence.",
+      },
     },
     required: ["summary", "scenes", "prompts", "final_prompt"],
     additionalProperties: false,
@@ -121,6 +202,8 @@ Return ONLY valid JSON with this exact shape:
 
 Rules:
 - Output MUST be valid JSON only. No markdown fences, no extra text.
+- Never paste JSON key names like "final_prompt" or "prompts" inside any string value. Each field is separate in the JSON object.
+- "final_prompt" must be the FULL multi-line modular template (starting with VIDEO CONCEPT:). Do not replace it with a single marketing sentence. If the idea is about hiring or a person, still output the full template below—put that idea inside VIDEO CONCEPT (quoted), not as a one-line replacement for the whole field.
 - Use concise, production-ready English.
 - "scenes" must be exactly 3 strings IN THIS ORDER for the user's idea:
   (1) Cold open — full beat: setting, hook, first image in 3–8 seconds.
@@ -128,39 +211,10 @@ Rules:
   (3) Climax & tag — full beat: payoff and final iconic frame.
   Each string must be substantive prose (at least 2 sentences, 80+ characters). Never output only the words "Cold open", "Rising action", or "Climax & tag" as the entire string.
 - "prompts" should be exactly 3 highly visual generation prompts.
-- "final_prompt" must follow this exact modular structure and headings:
-VIDEO CONCEPT:
-"${core}"
+- "final_prompt" must follow this exact modular structure (same headings and bullets; VIDEO CONCEPT must quote the user's idea):
+${buildCanonicalFinalPrompt(core)}
 
-STYLE:
-Modern, minimal, high-end product film
-
-STRUCTURE:
-1. Hook — immediate visual tied to ambition and product thinking
-2. Contrast — two visual chapters that build curiosity
-3. Closing — one iconic, memorable frame
-
-VISUAL LANGUAGE:
-* Camera: slow, intentional, confident movements
-* Lighting: soft key light with subtle edge contrast
-* Color: restrained neutrals with one accent color
-* Composition: clean, negative space, product-focused framing
-
-AUDIO:
-* Sparse piano or ambient bed
-* One sharp percussive accent for transitions
-
-TONE:
-* No direct narration
-* Let visuals communicate meaning
-* Subtle, intelligent, confident
-
-CONSTRAINTS:
-* Avoid generic visuals
-* Avoid stock aesthetics
-* Focus on originality and clarity
-
-Output schema (must match exactly):
+JSON Schema (must satisfy exactly; same as API response_format json_schema "video_concept_output"):
 ${JSON.stringify(outputSchema)}`;
 
   const res = await fetch("https://api.together.xyz/v1/chat/completions", {
@@ -171,13 +225,14 @@ ${JSON.stringify(outputSchema)}`;
     },
     body: JSON.stringify({
       model,
-      temperature: 0.7,
-      max_tokens: 1400,
+      temperature: 0.45,
+      max_tokens: 1600,
       messages: [
         {
           role: "system",
           content:
-            "You generate structured JSON for cinematic video concept planning.",
+            "Respond with ONLY a single JSON object—no markdown fences, no commentary before or after. " +
+            "Follow the json_schema sent via response_format AND the plain-text schema copy in the user message (Together structured outputs best practice).",
         },
         { role: "user", content: prompt },
       ],
@@ -209,7 +264,25 @@ ${JSON.stringify(outputSchema)}`;
   if (!parsed) {
     throw new Error("Together output JSON shape is invalid");
   }
-  return parsed;
+
+  const trimmed = sanitizeScenesAndPrompts(parsed.scenes, parsed.prompts);
+  if (!trimmed) {
+    throw new Error(
+      "Model leaked invalid lines into scenes or prompts (common with Qwen2.5). Set TOGETHER_MODEL to meta-llama/Llama-3.3-70B-Instruct-Turbo or Qwen/Qwen3.5-9B, then try again.",
+    );
+  }
+
+  const fp = parsed.final_prompt.trim();
+  const useModelFinal =
+    looksLikeModularFinalPrompt(fp) && fp.length >= 400;
+  const final_prompt = useModelFinal ? fp : buildCanonicalFinalPrompt(core);
+
+  return {
+    summary: parsed.summary,
+    scenes: trimmed.scenes,
+    prompts: trimmed.prompts,
+    final_prompt,
+  };
 }
 
 function maybePostCredit(): string | undefined {
