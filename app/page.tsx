@@ -27,9 +27,9 @@ export default function Home() {
   const [toast, setToast] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
-  const showToast = useCallback((message: string) => {
+  const showToast = useCallback((message: string, durationMs = 2200) => {
     setToast(message);
-    window.setTimeout(() => setToast(null), 2200);
+    window.setTimeout(() => setToast(null), durationMs);
   }, []);
 
   const generate = useCallback(async () => {
@@ -49,7 +49,8 @@ export default function Home() {
       const data = (await res.json()) as GenerateResult;
       setResult(data);
     } catch (e) {
-      showToast(e instanceof Error ? e.message : "Something went wrong");
+      const msg = e instanceof Error ? e.message : "Something went wrong";
+      showToast(msg, 5500);
     } finally {
       setLoading(false);
     }
@@ -111,12 +112,20 @@ export default function Home() {
   const sceneLabels = ["Cold open", "Rising action", "Climax & tag"];
   const getSceneBody = useCallback((label: string, text?: string) => {
     if (!text) return "No scene generated for this beat.";
+    const raw = text.trim();
+    const titleOnly =
+      /^(cold\s*open|rising\s*action|climax\s*(?:&|and)\s*tag)\.?$/i.test(
+        raw,
+      );
+    if (titleOnly) {
+      return "The model only returned a section title. Click Regenerate for a full scene description.";
+    }
     const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const prefixPattern = new RegExp(
       `^\\s*(?:${escapedLabel}|cold\\s*open|rising\\s*action|climax\\s*(?:&|and)\\s*tag)\\s*[:\\-\\u2014]?\\s*`,
       "i",
     );
-    return text.replace(prefixPattern, "").trim() || text.trim();
+    return raw.replace(prefixPattern, "").trim() || raw;
   }, []);
 
   return (

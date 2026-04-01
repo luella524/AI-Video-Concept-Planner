@@ -87,7 +87,14 @@ async function generateWithTogether(
       summary: { type: "string" },
       scenes: {
         type: "array",
-        items: { type: "string" },
+        description:
+          "Three prose scene beats for the user's idea: cold open, rising action, climax & tag — not section titles alone.",
+        items: {
+          type: "string",
+          minLength: 80,
+          description:
+            "2–4 sentences: specific shots, mood, and story beat. Do not output only a section label.",
+        },
         minItems: 3,
         maxItems: 3,
       },
@@ -115,7 +122,11 @@ Return ONLY valid JSON with this exact shape:
 Rules:
 - Output MUST be valid JSON only. No markdown fences, no extra text.
 - Use concise, production-ready English.
-- "scenes" should be exactly 3 items: Cold open, Rising action, Climax & tag.
+- "scenes" must be exactly 3 strings IN THIS ORDER for the user's idea:
+  (1) Cold open — full beat: setting, hook, first image in 3–8 seconds.
+  (2) Rising action — full beat: contrast, escalation, middle passage.
+  (3) Climax & tag — full beat: payoff and final iconic frame.
+  Each string must be substantive prose (at least 2 sentences, 80+ characters). Never output only the words "Cold open", "Rising action", or "Climax & tag" as the entire string.
 - "prompts" should be exactly 3 highly visual generation prompts.
 - "final_prompt" must follow this exact modular structure and headings:
 VIDEO CONCEPT:
@@ -161,7 +172,7 @@ ${JSON.stringify(outputSchema)}`;
     body: JSON.stringify({
       model,
       temperature: 0.7,
-      max_tokens: 900,
+      max_tokens: 1400,
       messages: [
         {
           role: "system",
@@ -213,25 +224,33 @@ function maybePostCredit(): string | undefined {
 }
 
 export async function POST(request: Request) {
+  let body: unknown;
   try {
-    const body = await request.json();
-    const idea = typeof body?.idea === "string" ? body.idea : "";
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
-    if (!idea.trim()) {
-      return NextResponse.json(
-        { error: "idea is required" },
-        { status: 400 }
-      );
-    }
+  const idea = typeof body === "object" && body !== null && "idea" in body
+    ? (body as { idea?: unknown }).idea
+    : undefined;
+  const ideaStr = typeof idea === "string" ? idea : "";
 
-    const base = await generateWithTogether(idea);
+  if (!ideaStr.trim()) {
+    return NextResponse.json({ error: "idea is required" }, { status: 400 });
+  }
+
+  try {
+    const base = await generateWithTogether(ideaStr);
     const post_credit = maybePostCredit();
     const payload: GenerateResponse = post_credit
       ? { ...base, post_credit }
       : base;
 
     return NextResponse.json(payload);
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  } catch (e) {
+    const message =
+      e instanceof Error ? e.message : "Generation failed";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
