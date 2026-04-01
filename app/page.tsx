@@ -342,21 +342,35 @@ export default function Home() {
               Hi I&apos;m Ella 👋🏻
             </h2>
             <div className="mt-5 space-y-4 text-[15px] leading-relaxed text-slate-300">
+              <p>
+                I believe the most impactful technologies are those that bring
+                people together and unlock new forms of creativity whether
+                through music, video, or software.
+              </p>
               <p className="text-cyan-200">
-                I believe the next generation of AI will be defined by platforms
-                that help teams ship faster, scale reliably, and optimize for
-                efficiency, and I&apos;m excited to join Together AI as a Product
-                Marketing Intern in 2026.
+                I&apos;m excited to join{" "}
+                <span className="font-bold underline decoration-cyan-100/80 underline-offset-2">
+                  Together.AI as a Product Marketing Intern
+                </span>{" "}
+                in 2026.
               </p>
             </div>
-            <div className="mt-8">
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <a
                 href="https://www.linkedin.com/in/ellalu05/"
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex w-full items-center justify-center rounded-full border border-cyan-200/50 bg-gradient-to-r from-cyan-300 to-violet-400 px-4 py-3 text-center text-sm font-semibold text-slate-950 transition hover:brightness-110"
+                className="inline-flex flex-1 items-center justify-center rounded-full border border-cyan-200/50 bg-gradient-to-r from-cyan-300 to-violet-400 px-4 py-3 text-center text-sm font-semibold text-slate-950 transition hover:brightness-110"
               >
                 Let’s Connect →
+              </a>
+              <a
+                href="https://hiellalu.com/"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex flex-1 items-center justify-center rounded-full border border-white/25 bg-white/10 px-4 py-3 text-center text-sm font-medium text-slate-100 transition hover:border-cyan-200/70 hover:bg-cyan-300/20"
+              >
+                Visit My Portfolio
               </a>
             </div>
           </div>
